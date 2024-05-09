@@ -1,42 +1,50 @@
-import socket
-import cv2
+from flask import Flask, request, send_file, jsonify
+from mpi4py import MPI
 import os
-from image_processing import process_image
+from image_processing import process_image, advanced_process_image
 
-HOST = '0.0.0.0'
-PORT = 4000
+app = Flask(__name__)
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
 
+UPLOAD_FOLDER = 'uploads'
+PROCESSED_FOLDER = 'processed'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 
-def send_file(client_socket, filename):
-    """ Send the processed file back to the client. """
-    with open(filename, 'rb') as f:
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if rank != 0:
+        return jsonify({"error": "This endpoint can only be accessed by the master node."}), 403
+    
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    file = request.files['file']
+    operation = request.form.get('operation')
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+    
+    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+    file.save(filepath)
+    
+    if operation in ['grayscale', 'blur', 'edges']:
+        processed_filename, status = process_image(operation, filepath)
+    else:
+        processed_filename, status = advanced_process_image(comm, operation, filepath)
+    
+    if status != "Success":
+        return jsonify({"error": status}), 500
+    
+    return send_file(processed_filename, as_attachment=True)
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "OK", "rank": rank})
+
+if __name__ == '__main__':
+    if rank == 0:
+        app.run(host='0.0.0.0', port=4000)
+    else:
+        # Worker node logic
         while True:
-            data = f.read(1024)
-            if not data:
-                break
-            client_socket.send(data)
-    client_socket.send(b'END')
-
-def main():
-    
-    
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket.bind((HOST, PORT))
-    server_socket.listen(5)
-    print("Server listening...")
-
-    while True:
-        client_socket, addr = server_socket.accept()
-        print(f"Connection from: {addr}")
-        initial_data = client_socket.recv(1024).decode()
-        op, filename = initial_data.split(',')
-        processed_filename, status = process_image(op, filename)
-        if processed_filename:
-            send_file(client_socket, processed_filename)
-        else:
-            client_socket.send(status.encode())
-        client_socket.close()
-
-if __name__ == "__main__":
-    main()
+            pass  # This is a placeholder for worker logic, if needed
