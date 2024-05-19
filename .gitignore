@@ -9,5 +9,5 @@ __pycache__/
 *.pyi
 *.pycachefile
 *.egg-info/
-dist/
+
 build/
