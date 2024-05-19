@@ -1,12 +1,13 @@
+import os
 import cv2
 import numpy as np
 import io
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, send_file, jsonify, send_from_directory
 from flask_cors import CORS
 from mpi4py import MPI
 import time
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='./dist', static_url_path='/')
 CORS(app)
 
 comm = MPI.COMM_WORLD
@@ -21,6 +22,10 @@ def split_image(image, num_parts):
 
 def combine_image(parts, original_shape):
     return np.vstack(parts)
+
+@app.route('/')
+def serve():
+    return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/process_image', methods=['POST'])
 def process_image():
